@@ -1,6 +1,5 @@
 FROM php:8.3-cli
 
-# Allow composer to run as root
 ENV COMPOSER_ALLOW_SUPERUSER=1
 ENV COMPOSER_NO_INTERACTION=1
 
@@ -16,10 +15,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
 
-# Copy composer files first (better cache layer)
+# Copy composer files (cache layer)
 COPY composer.json composer.lock ./
 
-# Install PHP dependencies (ignore platform reqs since extensions are installed above)
+# Install PHP dependencies
 RUN composer install \
     --no-dev \
     --optimize-autoloader \
@@ -30,15 +29,22 @@ RUN composer install \
 # Copy app source
 COPY . .
 
-# Run composer scripts now that full app is available
+# Create .env from example and generate APP_KEY at build time
+RUN cp .env.example .env \
+    && php artisan key:generate --force
+
+# Dump autoload with full source
 RUN composer dump-autoload --optimize --no-dev
 
-# Set permissions
-RUN mkdir -p storage/logs storage/framework/cache storage/framework/sessions \
-             storage/framework/views bootstrap/cache \
+# Storage directories & permissions
+RUN mkdir -p storage/logs \
+             storage/framework/cache \
+             storage/framework/sessions \
+             storage/framework/views \
+             bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# Storage link (may fail gracefully if already exists)
+# Storage link
 RUN php artisan storage:link || true
 
 # Make entrypoint executable
