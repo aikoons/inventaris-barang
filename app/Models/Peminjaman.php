@@ -1,0 +1,98 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class Peminjaman extends Model
+{
+    use HasFactory;
+
+    protected $table = 'peminjamans';
+
+    protected $fillable = [
+        'kode_peminjaman',
+        'barang_id',
+        'user_id',
+        'nama_peminjam',
+        'instansi_peminjam',
+        'jumlah_pinjam',
+        'tanggal_pinjam',
+        'tanggal_kembali_rencana',
+        'tanggal_kembali_aktual',
+        'status',
+        'kondisi_kembali',
+        'keterangan',
+        'keterangan_kembali',
+    ];
+
+    protected $casts = [
+        'tanggal_pinjam'          => 'date',
+        'tanggal_kembali_rencana' => 'date',
+        'tanggal_kembali_aktual'  => 'date',
+        'jumlah_pinjam'           => 'integer',
+    ];
+
+    // Relationships
+    public function barang(): BelongsTo
+    {
+        return $this->belongsTo(Barang::class, 'barang_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    // Accessors
+    public function getStatusBadgeAttribute(): string
+    {
+        return match ($this->status) {
+            'dipinjam'    => 'primary',
+            'dikembalikan' => 'success',
+            'terlambat'   => 'danger',
+            'rusak'       => 'warning',
+            default       => 'secondary',
+        };
+    }
+
+    public function getStatusLabelAttribute(): string
+    {
+        return match ($this->status) {
+            'dipinjam'    => 'Dipinjam',
+            'dikembalikan' => 'Dikembalikan',
+            'terlambat'   => 'Terlambat',
+            'rusak'       => 'Rusak',
+            default       => '-',
+        };
+    }
+
+    public function getSisaHariAttribute(): ?int
+    {
+        if ($this->status === 'dikembalikan') return null;
+        return now()->diffInDays($this->tanggal_kembali_rencana, false);
+    }
+
+    public function getIsTerlambatAttribute(): bool
+    {
+        return in_array($this->status, ['dipinjam', 'terlambat'])
+            && now()->greaterThan($this->tanggal_kembali_rencana);
+    }
+
+    // Scopes
+    public function scopeAktif($query)
+    {
+        return $query->whereIn('status', ['dipinjam', 'terlambat']);
+    }
+
+    public function scopeTerlambat($query)
+    {
+        return $query->where('status', 'terlambat')
+                     ->orWhere(function ($q) {
+                         $q->where('status', 'dipinjam')
+                           ->where('tanggal_kembali_rencana', '<', now()->toDateString());
+                     });
+    }
+}

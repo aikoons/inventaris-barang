@@ -1,0 +1,90 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
+
+class UserController extends Controller
+{
+    public function index(Request $request)
+    {
+        $query = User::query();
+        if ($request->filled('search')) {
+            $kw = $request->search;
+            $query->where(fn($q) => $q->where('name','like',"%{$kw}%")->orWhere('email','like',"%{$kw}%")->orWhere('nama_lengkap','like',"%{$kw}%"));
+        }
+        if ($request->filled('role')) $query->where('role', $request->role);
+
+        $users = $query->orderBy('nama_lengkap')->paginate(15)->withQueryString();
+        return view('user.index', compact('users'));
+    }
+
+    public function create()
+    {
+        return view('user.create');
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name'         => ['required', 'string', 'max:50', 'unique:users,name', 'regex:/^[a-z0-9._]+$/'],
+            'nama_lengkap' => ['required', 'string', 'max:200'],
+            'email'        => ['required', 'email', 'unique:users,email'],
+            'telepon'      => ['nullable', 'string', 'max:20'],
+            'role'         => ['required', 'in:admin,staff'],
+            'password'     => ['required', Password::defaults(), 'confirmed'],
+        ], [
+            'name.regex' => 'Username hanya boleh huruf kecil, angka, titik, dan underscore.',
+        ]);
+
+        $validated['password'] = Hash::make($validated['password']);
+        User::create($validated);
+
+        return redirect()->route('user.index')->with('success', 'User berhasil ditambahkan.');
+    }
+
+    public function edit(User $user)
+    {
+        return view('user.edit', compact('user'));
+    }
+
+    public function update(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'nama_lengkap' => ['required', 'string', 'max:200'],
+            'email'        => ['required', 'email', Rule::unique('users','email')->ignore($user->id)],
+            'telepon'      => ['nullable', 'string', 'max:20'],
+            'role'         => ['required', 'in:admin,staff'],
+            'is_active'    => ['boolean'],
+        ]);
+
+        $user->update($validated);
+        return redirect()->route('user.index')->with('success', 'Data user berhasil diperbarui.');
+    }
+
+    public function resetPassword(Request $request, User $user)
+    {
+        $validated = $request->validate([
+            'password' => ['required', Password::defaults(), 'confirmed'],
+        ]);
+
+        $user->update(['password' => Hash::make($validated['password'])]);
+        return redirect()->route('user.index')->with('success', 'Password user berhasil direset.');
+    }
+
+    public function destroy(User $user)
+    {
+        if ($user->id === auth()->id()) {
+            return redirect()->route('user.index')->with('error', 'Tidak dapat menghapus akun sendiri.');
+        }
+        if ($user->peminjamans()->whereIn('status', ['dipinjam', 'terlambat'])->count() > 0) {
+            return redirect()->route('user.index')->with('error', 'User masih memiliki peminjaman aktif.');
+        }
+        $user->delete();
+        return redirect()->route('user.index')->with('success', 'User berhasil dihapus.');
+    }
+}
